@@ -1,0 +1,215 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  NEWS_GENERATOR
+  AUDIO_GENERATOR
+  VIDEO_GENERATOR
+  SCRIPT_WRITER
+  VOICE_GENERATOR
+  @@map("user_roles")
+}
+
+enum RoleType {
+  NEWS_GENERATOR
+  AUDIO_GENERATOR
+  VIDEO_GENERATOR
+  SCRIPT_WRITER
+  VOICE_GENERATOR
+}
+
+enum VideoStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model user {
+  id           String   @unique @default(uuid())
+  email        String   @unique
+  role         UserRole @default(ADMIN)
+  password     String?
+  googleId     String?  @unique
+  refreshToken String?
+  
+  // Role-specific fields
+  assignedRole AssignedRole? @relation("UserAssignedRole")
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  chatHistory    chatHistory[]
+  videos         Video[]
+  Voice          Voice[]
+  speechHistory  SpeechHistory[]
+  script         Script[]
+  
+  @@map("users")
+}
+
+model AssignedRole {
+  id          String @id @default(uuid())
+  userId      String @unique
+  roleType    RoleType
+  isActive    Boolean @default(true)
+  assignedAt  DateTime @default(now())
+  
+  user user @relation("UserAssignedRole", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("assigned_roles")
+}
+
+model chatHistory {
+  id        String           @unique @default(uuid())
+  userId    String
+  title     String           @default("")
+  agentName String
+  messages  messageHistory[]
+  createdAt DateTime         @default(now())
+
+  user user @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_history")
+}
+
+model messageHistory {
+  id        String   @unique @default(uuid())
+  chatId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  chat chatHistory @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@map("message_history")
+}
+
+model Video {
+  id              String      @id @default(uuid())
+  userId          String
+  status          VideoStatus @default(PENDING)
+  
+  // Avatar & Voice Info
+  avatarId        String
+  voiceId         String
+  
+  // Script & Settings
+  script          String      @db.Text
+  duration        String      @default("Auto")
+  language        String      @default("hi")
+  
+  // HeyGen Info
+  heygenVideoId   String?
+  videoUrl        String?
+  thumbnailUrl    String?
+  videoDuration   Float?
+  
+  // Metadata
+  errorMessage    String?
+  deleteAt        DateTime?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user user @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("videos")
+}
+
+model Voice {
+  id            String    @id @default(uuid())
+  voiceId       String    @unique
+  name          String
+  description   String?
+  language      String    @default("multilingual")
+  accent        String?
+  labels        Json?
+  isCustom      Boolean   @default(false)
+  userId        String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  audioSamples  AudioSample[]
+  speechHistory SpeechHistory[]
+  
+  user          user?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("voices")
+}
+
+model AudioSample {
+  id            String   @id @default(uuid())
+  voiceId       String
+  audioData     Bytes?
+  fileName      String
+  fileSize      Int
+  audioFilePath String?
+  mimeType      String   @default("audio/mpeg")
+  
+  createdAt     DateTime @default(now())
+  
+  voice         Voice    @relation(fields: [voiceId], references: [id], onDelete: Cascade)
+
+  @@map("audio_samples")
+}
+
+model Script {
+  id                String   @id @default(uuid())
+  userId            String
+  heading           String
+  description       String?
+  content           String   @db.Text
+  isVoiceGenerated  Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  user              user?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  speechHistory     SpeechHistory[]
+  
+  @@index([userId])
+  @@index([isVoiceGenerated, createdAt])
+}
+
+model SpeechHistory {
+  id              String   @id @default(uuid())
+  text            String   @db.Text
+  audioFilePath   String?
+  language        String   @default("multilingual")
+  status          String   @default("PROCESSING")
+  errorMessage    String?
+  fileSize        Int      @default(0)
+  duration        Float?
+  mimeType        String   @default("audio/mpeg")
+  stability       Float    @default(0.5)
+  similarityBoost Float    @default(0.75)
+  style           Float    @default(0.0)
+  useSpeakerBoost Boolean  @default(true)
+  userId          String
+  voiceId         String?
+  scriptId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  expiresAt       DateTime?
+  
+  voice           Voice?   @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+  script          Script?  @relation(fields: [scriptId], references: [id], onDelete: SetNull)
+  user            user? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([voiceId])
+  @@index([scriptId])
+  @@index([status])
+  @@index([expiresAt])
+}
