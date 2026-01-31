@@ -28,7 +28,7 @@ import { cleanupOldRecordsFunction } from "./inngest/functions/cleanup.functions
 dotenv.config();
 
 let server = express();
-let PORT = process.env.PORT || 8080;
+let PORT = process.env.PORT || 9080;
 
 // 1. SETUP UPLOAD DIRECTORY (CRITICAL FOR VPS)
 // If this folder doesn't exist on the VPS, your app will crash on upload.
@@ -41,6 +41,8 @@ if (!fs.existsSync(uploadDir)){
 // 2. SETUP CORS
 const allowedOrigins = [
   "admixaistudio.admixmedia.in",
+  "https://admixaistudio.admixmedia.in/login",
+  "https://admixaistudio.admixmedia.in",
   "https://admixaistudio.admixmedia.in", 
   "https://admixaistudio.admixmedia.in", 
   "http://localhost:5173",
