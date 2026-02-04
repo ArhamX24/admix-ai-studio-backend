@@ -83,7 +83,8 @@ server.use("/api/inngest", serve({
     addCustomVoiceFunction,
     generateVideoWorkflow,
     cleanupOldRecordsFunction 
-  ]
+  ],
+  signingKey: process.env.INNGEST_SIGNING_KEY
 }));
 
 // Body Parsers (After Inngest)
