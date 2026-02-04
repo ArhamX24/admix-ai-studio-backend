@@ -130,4 +130,5 @@ server.get("/", (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Server is Running on port ${PORT}`);
+  console.log(process.env.INNGEST_EVENT_KEY)
 });
