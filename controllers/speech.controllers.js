@@ -74,7 +74,7 @@ const generateSpeech = async (req, res) => {
     console.error("Generate speech error:", error);
     res.status(500).json({
       error: "Failed to generate speech",
-      details: error.message,
+      details: error,
     });
   }
 };
