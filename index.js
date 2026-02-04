@@ -40,6 +40,7 @@ if (!fs.existsSync(uploadDir)){
 
 // 2. SETUP CORS
 const allowedOrigins = [
+  "https://app.inngest.com",
   "admixaistudio.admixmedia.in",
   "https://admixaistudio.admixmedia.in/login",
   "https://admixaistudio.admixmedia.in",
@@ -65,15 +66,15 @@ server.use(cors({
   optionsSuccessStatus: 200
 }));
 
-// 3. TRUST PROXY (CRITICAL FOR NGINX)
-// Since Nginx handles SSL, Express needs this to know the request is secure (https)
+
 server.set('trust proxy', 1);
 
 server.use(cookieParser());
 
-// Note: Inngest is best placed BEFORE body parsers if possible, 
-// or ensure body parsers don't conflict. Inngest handles its own parsing.
-// Register Inngest functions
+server.get("/api/inngest", (req, res) => {
+    res.json({ message: "Inngest endpoint is reachable" });
+});
+
 server.use("/api/inngest", serve({
   client: inngest,
   functions: [
