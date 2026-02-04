@@ -1,9 +1,14 @@
 import express from "express";
 import dotenv from 'dotenv';
+
+
+dotenv.config();
+
+
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import fs from "fs"; // <--- IMPORT THIS
-import path from "path"; // <--- IMPORT THIS
+import fs from "fs";
+import path from "path";
 import multer from "multer";
 import { serve } from "inngest/express";
 
@@ -25,7 +30,6 @@ import { addCustomVoiceFunction, textToSpeechFunction } from "./inngest/function
 import { generateVideoWorkflow } from "./inngest/functions/video-agent.functions.js";
 import { cleanupOldRecordsFunction } from "./inngest/functions/cleanup.functions.js";
 
-dotenv.config();
 
 let server = express();
 let PORT = process.env.PORT || 9080;
@@ -130,5 +134,4 @@ server.get("/", (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Server is Running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV}`);
 });
