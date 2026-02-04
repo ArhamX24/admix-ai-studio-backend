@@ -75,10 +75,6 @@ server.set('trust proxy', 1);
 
 server.use(cookieParser());
 
-server.get("/api/inngest", (req, res) => {
-    res.json({ message: "Inngest endpoint is reachable" });
-});
-
 server.use("/api/inngest", serve({
   client: inngest,
   functions: [
