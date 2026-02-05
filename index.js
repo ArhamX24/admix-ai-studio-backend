@@ -73,6 +73,8 @@ server.use(cors({
 
 server.set('trust proxy', 1);
 
+server.use(express.json({ limit: '50mb' }));
+server.use(express.urlencoded({ limit: '50mb', extended: true }));
 server.use(cookieParser());
 
 server.use("/api/inngest", serve({
@@ -87,9 +89,6 @@ server.use("/api/inngest", serve({
   signingKey: process.env.INNGEST_SIGNING_KEY
 }));
 
-// Body Parsers (After Inngest)
-server.use(express.json({ limit: '50mb' }));
-server.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Multer Setup
 const storage = multer.diskStorage({

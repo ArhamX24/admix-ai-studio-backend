@@ -7,11 +7,4 @@ const inngest = new Inngest({
     fetch: fetch.bind(globalThis)               
 });
 
-console.log('====================================');
-console.log('Inngest Client Initialized:', inngest.id);
-console.log('Event Key Present:', !!inngest.eventKey);
-console.log('Event Key:', inngest.eventKey); // Full key for testing
-console.log('Event Key Length:', inngest.eventKey?.length);
-console.log('====================================');
-
 export default inngest;
