@@ -55,6 +55,7 @@ model user {
   Voice          Voice[]
   speechHistory  SpeechHistory[]
   script         Script[]
+  savedScript    SavedScript[]
   
   @@map("users")
 }
@@ -212,4 +213,41 @@ model SpeechHistory {
   @@index([scriptId])
   @@index([status])
   @@index([expiresAt])
+}
+
+model morningAiNewsFetch {
+  id String @id @default(uuid())
+  title String
+  hindiSummary String  @db.Text
+  description String   @db.Text
+  link String
+  image_url String
+  source_name String
+  source_url String
+  category String
+  pubDate String
+  keywords String[]
+  
+  createdAt DateTime @default(now())
+}
+
+model SavedScript {
+  id          String   @id @default(uuid())
+  userId      String
+  heading     String
+  description String?  @db.Text
+  anchor      String   @db.Text
+  voiceOver   String   @db.Text
+  thumbnail   String?
+  scriptType  String?  // "short" | "long"
+  newsIds     String[] // which news were used
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("saved_scripts")
 }

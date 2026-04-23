@@ -19,7 +19,7 @@ import userRouter from "./routes/user.routes.js";
 import AuthRouter from "./routes/auth.routes.js";
 import speechRouter from "./routes/speech-agent.routes.js";
 import videoAgentRouter from "./routes/video-agent.routes.js";
-import scriptRouter from "./routes/script.routes.js";
+import scriptGeneratorRouter from "./routes/script.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import newsRouter from "./routes/news-agent.routes.js";
 import { authenticateToken } from "./middlewares/auth.middleware.js";
@@ -29,6 +29,7 @@ import { newsOptimizerFunction } from "./inngest/functions/news-agent.functions.
 import { addCustomVoiceFunction, textToSpeechFunction } from "./inngest/functions/speech-agent.functions.js";
 import { generateVideoWorkflow } from "./inngest/functions/video-agent.functions.js";
 import { cleanupOldRecordsFunction } from "./inngest/functions/cleanup.functions.js";
+import morningNewsFetcherRouter from "./routes/morningNewsFetcher.routes.js";
 
 
 let server = express();
@@ -115,10 +116,12 @@ server.use("/api/v1/auth", AuthRouter);
 server.use("/api/v1/user/register-email", userRouter); 
 server.use("/api/v1/user", userRouter);
 
+server.use("/api/v1/morning-news-fetcher", morningNewsFetcherRouter)
+
 // Protected Routes
 server.use("/api/v1/admin", adminRouter);
 server.use("/api/v1/agent", authenticateToken, newsRouter);
-server.use("/api/v1/scripts", scriptRouter); // Make sure you want this public? If not, add authenticateToken
+server.use("/api/v1/scripts", scriptGeneratorRouter); // Make sure you want this public? If not, add authenticateToken
 server.use("/api/v1/speech", speechRouter);   
 server.use("/api/v1/video", videoAgentRouter); 
 

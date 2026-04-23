@@ -1,247 +1,198 @@
+import { tasks, runs } from "@trigger.dev/sdk/v3";
 import prisma from "../DB/prisma.client.js";
+// Helper: trigger a task, poll until complete, return output or throw
+const triggerAndWait = async (taskId, payload) => {
+  const result = await tasks.trigger(taskId, payload);
 
-export const createScript = async (req, res) => {
+  let run = await runs.retrieve(result.id);
+  while (!run.isCompleted) {
+    await new Promise((res) => setTimeout(res, 1000));
+    run = await runs.retrieve(result.id);
+  }
+
+  if (run.status === "FAILED" || run.status === "CANCELED") {
+    throw new Error(`Task "${taskId}" failed. Please try again.`);
+  }
+
+  return run.output;
+};
+
+// ── GET /news/:id ────────────────────────────────────────────────
+export const getNewsById = async (req, res) => {
   try {
-    const {heading, description, content } = req.body;
+    const { id } = req.params;
+    const news = await prisma.morningAiNewsFetch.findUnique({ where: { id } });
+    if (!news) {
+      return res.status(404).json({ success: false, message: "News not found" });
+    }
+    return res.status(200).json({ success: true, data: news });
+  } catch (error) {
+    console.error("getNewsById error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
 
-    let userId = req?.user.id
+// ── POST /generate ───────────────────────────────────────────────
+export const generateScript = async (req, res) => {
+  try {
+    const { newsIds, scriptType } = req.body;
 
-    if (!userId || !heading || !content) {
+    if (!newsIds || !Array.isArray(newsIds) || newsIds.length === 0) {
+      return res.status(400).json({ success: false, message: "newsIds array is required" });
+    }
+    if (!scriptType || !["short", "long"].includes(scriptType)) {
+      return res.status(400).json({ success: false, message: "scriptType must be 'short' or 'long'" });
+    }
+
+    const output = await triggerAndWait("generate-script", { newsIds, scriptType });
+
+    return res.status(200).json({
+      success: true,
+      message: "Script generated successfully!",
+      data: output,
+    });
+  } catch (error) {
+    console.error("generateScript error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── POST /refine ─────────────────────────────────────────────────
+export const refineScript = async (req, res) => {
+  try {
+    const { anchor, voiceOver, userMessage, scriptType } = req.body;
+
+    if (!anchor || !userMessage) {
       return res.status(400).json({
-        error: "userId, heading, and content are required",
+        success: false,
+        message: "anchor and userMessage are required",
       });
     }
+    if (!scriptType || !["short", "long"].includes(scriptType)) {
+      return res.status(400).json({ success: false, message: "scriptType must be 'short' or 'long'" });
+    }
 
-    const script = await prisma.script.create({
+    const output = await triggerAndWait("refine-script", {
+      anchor,
+      voiceOver: voiceOver || "",
+      userMessage,
+      scriptType,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Script refined successfully!",
+      data: output,
+    });
+  } catch (error) {
+    console.error("refineScript error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── POST /save ───────────────────────────────────────────────────
+export const saveGeneratedScript = async (req, res) => {
+  try {
+    const { heading, anchor, voiceOver, thumbnail, scriptType } = req.body;
+    const userId = req?.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    if (!heading || !anchor) {
+      return res.status(400).json({ success: false, error: "heading and anchor are required" });
+    }
+
+    const script = await prisma.savedScript.create({
       data: {
-        userId,
         heading,
-        description: description || "",
-        content,
-        isVoiceGenerated: false,
-      },
-    });
+        anchor,
+        voiceOver: scriptType === "short" ? "" : (voiceOver || ""),
+        thumbnail: thumbnail || "",
+        scriptType: scriptType || null,
 
-    res.status(201).json({
-      message: "Script created successfully",
-      script,
-    });
-  } catch (error) {
-    console.error("Create script error:", error);
-    res.status(500).json({
-      error: "Failed to create script",
-      details: error.message,
-    });
-  }
-};
-
-// Get user's own scripts (for My Scripts page)
-export const getScripts = async (req, res) => {
-  try {
-    const { page = 1, limit = 20, isVoiceGenerated } = req.query;
-
-    // Check if user exists and is authenticated
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({
-        error: "Unauthorized",
-        message: "User not authenticated",
-      });
-    }
-
-    const userId = req.user.id;
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    // Build where clause
-    const where = {
-      userId: String(userId), // Always filter by userId for user's own scripts
-    };
-
-    // Optional filter by voice generation status
-    if (isVoiceGenerated !== undefined) {
-      where.isVoiceGenerated = isVoiceGenerated === "true";
-    }
-
-
-    const [scripts, total] = await Promise.all([
-      prisma.script.findMany({
-        where,
-        select: {
-          id: true,
-          heading: true,
-          description: true,
-          content: true,
-          isVoiceGenerated: true,
-          createdAt: true,
-          updatedAt: true,
+        user: {
+          connect: { id: userId },
         },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: Number(limit),
-      }),
-      prisma.script.count({ where }),
-    ]);
-
-
-    res.status(200).json({
-      scripts,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / Number(limit)),
       },
     });
-  } catch (error) {
-    console.error("Get scripts error:", error);
-    res.status(500).json({
-      error: "Failed to fetch scripts",
-      details: error.message,
+
+    return res.status(201).json({
+      success: true,
+      message: "Script saved successfully",
+      data: script,
     });
+
+  } catch (error) {
+    console.error("saveGeneratedScript error:", error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Get ALL scripts for voice-over generation (no user filtering)
-export const getScriptsForVoiceOver = async (req, res) => {
+// ── GET /saved ────────────────────────────────────────────────────
+export const getSavedScripts = async (req, res) => {
   try {
-    const { page = 1, limit = 20, isVoiceGenerated } = req.query;
-
-    // Check if user is authenticated
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({
-        error: "Unauthorized",
-        message: "User not authenticated",
-      });
+    const userId = req?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    // Build where clause WITHOUT userId filtering
-    const where = {};
-
-    // Optional filter by voice generation status
-    if (isVoiceGenerated !== undefined) {
-      where.isVoiceGenerated = isVoiceGenerated === "true";
-    }
-
-
-    const [scripts, total] = await Promise.all([
-      prisma.script.findMany({
-        where,
-        select: {
-          id: true,
-          heading: true,
-          description: true,
-          content: true,
-          isVoiceGenerated: true,
-          createdAt: true,
-          updatedAt: true,
-          userId: true, // Include userId to show who created it
-        },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: Number(limit),
-      }),
-      prisma.script.count({ where }),
-    ]);
-
-
-    res.status(200).json({
-      scripts,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / Number(limit)),
-      },
+    // ✅ Use prisma.script (same model as save)
+    const scripts = await prisma.savedScript.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
     });
+
+    // ✅ Map to frontend-expected shape
+    const mapped = scripts.map((s) => ({
+      id: s.id,
+      heading: s.heading,
+      anchor: s.anchor || "",
+      voiceOver: s.voiceOver || "",
+      thumbnail: s.thumbnail || "",
+      scriptType: s.scriptType || null,
+      isVoiceGenerated: s.isVoiceGenerated || false,
+      newsIds: s.newsIds || [],
+      createdAt: s.createdAt,
+    }));
+
+    return res.status(200).json({ success: true, data: mapped });
   } catch (error) {
-    console.error("Get scripts for voice-over error:", error);
-    res.status(500).json({
-      error: "Failed to fetch scripts",
-      details: error.message,
-    });
+    console.error("getSavedScripts error:", error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-export const getScriptById = async (req, res) => {
+export const deleteSavedScript = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req?.user?.id;
 
-    const script = await prisma.script.findUnique({
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    // ✅ FIX: use savedScript instead of script
+    const script = await prisma.savedScript.findUnique({
       where: { id },
-      include: {
-        speechHistory: {
-          where: { status: "COMPLETED" },
-          select: {
-            id: true,
-            audioFilePath: true,
-            createdAt: true,
-          },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
     });
 
-    if (!script) {
-      return res.status(404).json({ error: "Script not found" });
+    if (!script || script.userId !== userId) {
+      return res.status(404).json({ success: false, error: "Script not found" });
     }
 
-    res.json({ script });
-  } catch (error) {
-    console.error("Get script error:", error);
-    res.status(500).json({
-      error: "Failed to fetch script",
-      details: error.message,
-    });
-  }
-};
-
-export const updateScript = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { heading, description, content, isVoiceGenerated } = req.body;
-
-    const updatedScript = await prisma.script.update({
+    await prisma.savedScript.delete({
       where: { id },
-      data: {
-        ...(heading && { heading }),
-        ...(description !== undefined && { description }),
-        ...(content && { content }),
-        ...(isVoiceGenerated !== undefined && { isVoiceGenerated }),
-      },
     });
 
-    res.json({
-      message: "Script updated successfully",
-      script: updatedScript,
+    return res.status(200).json({
+      success: true,
+      message: "Script deleted",
     });
+
   } catch (error) {
-    console.error("Update script error:", error);
-    res.status(500).json({
-      error: "Failed to update script",
-      details: error.message,
-    });
-  }
-};
-
-export const deleteScript = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await prisma.script.delete({ where: { id } });
-
-    res.json({
-      message: "Script deleted successfully",
-      deletedId: id,
-    });
-  } catch (error) {
-    console.error("Delete script error:", error);
-    res.status(500).json({
-      error: "Failed to delete script",
-      details: error.message,
-    });
+    console.error("deleteSavedScript error:", error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
