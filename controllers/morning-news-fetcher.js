@@ -29,24 +29,27 @@ const getMorningNewsTester = async (req,res) => {
     }
 }
 
-const getMorningNews = async (req,res) => {
-   try {
+const getMorningNews = async (req, res) => {
+  try {
     const { category, forceRefresh = false } = req?.body;
  
     if (!category) {
       return res.status(400).json({ error: "Category is required." });
     }
  
-    // ✅ Rolling 24-hour window instead of "since midnight today"
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
  
-    if (!forceRefresh) {
+    // ── Force refresh — delete old news for this category first ──
+    if (forceRefresh) {
+      await prisma.morningAiNewsFetch.deleteMany({
+        where: { category },
+      });
+    } else {
+      // ── Normal load — return from DB if news exists ──
       const existingNews = await prisma.morningAiNewsFetch.findMany({
         where: {
-          category: category,
-          createdAt: {
-            gte: twentyFourHoursAgo,  // only news from last 24 hours
-          },
+          category,
+          createdAt: { gte: twentyFourHoursAgo },
         },
         orderBy: { createdAt: "desc" },
         take: 25,
@@ -61,7 +64,7 @@ const getMorningNews = async (req,res) => {
       }
     }
  
-    // No recent news found (or forceRefresh) — trigger AI fetch
+    // ── Fetch fresh — either forceRefresh or nothing in DB ──
     const result = await tasks.trigger("morning-news-fetcher", { category });
     let run = await runs.retrieve(result.id);
  
@@ -79,6 +82,7 @@ const getMorningNews = async (req,res) => {
       message: `Successfully generated fresh ${category} news!`,
       data: run.output,
     });
+ 
   } catch (error) {
     console.error("Error in getMorningNews:", error);
     return res.status(500).json({
@@ -86,6 +90,7 @@ const getMorningNews = async (req,res) => {
       message: error.message,
     });
   }
-}
+};
+
 
 export{getMorningNews, getMorningNewsTester}

@@ -239,8 +239,9 @@ model SavedScript {
   anchor      String   @db.Text
   voiceOver   String   @db.Text
   thumbnail   String?
-  scriptType  String?  // "short" | "long"
-  newsIds     String[] // which news were used
+  scriptType  String?  
+  newsIds     String[] 
+  isVoiceGenerated Boolean  @default(false)
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

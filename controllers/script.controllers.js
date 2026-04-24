@@ -1,6 +1,7 @@
 import { tasks, runs } from "@trigger.dev/sdk/v3";
 import prisma from "../DB/prisma.client.js";
-// Helper: trigger a task, poll until complete, return output or throw
+
+
 const triggerAndWait = async (taskId, payload) => {
   const result = await tasks.trigger(taskId, payload);
 
@@ -106,15 +107,14 @@ export const saveGeneratedScript = async (req, res) => {
 
     const script = await prisma.savedScript.create({
       data: {
+        userId,
         heading,
         anchor,
         voiceOver: scriptType === "short" ? "" : (voiceOver || ""),
         thumbnail: thumbnail || "",
         scriptType: scriptType || null,
-
-        user: {
-          connect: { id: userId },
-        },
+        newsIds: [],
+        isVoiceGenerated: false,  
       },
     });
 

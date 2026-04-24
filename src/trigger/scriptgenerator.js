@@ -1,6 +1,6 @@
 import { task } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
-import prisma from "../../DB/prisma.client";
+import prisma from "../../DB/prisma.client.js";
 
 
 // ── Task 1: Generate script from selected news IDs ──────────────
