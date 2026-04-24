@@ -2,10 +2,6 @@ import { task } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
 import prisma from "../../DB/prisma.client";
 
-const groq = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
 
 // ── Task 1: Generate script from selected news IDs ──────────────
 export const generateScriptTask = task({
@@ -13,15 +9,21 @@ export const generateScriptTask = task({
   retry: { maxAttempts: 3 },
   run: async (payload) => {
     const { newsIds, scriptType } = payload;
-
+    
     const newsItems = await prisma.morningAiNewsFetch.findMany({
       where: { id: { in: newsIds } },
     });
-
+    
     if (!newsItems || newsItems.length === 0) {
       throw new Error(`No news found for IDs: ${newsIds.join(", ")}`);
     }
+    
+    const groq = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
 
+    
     const newsContext = newsItems
       .map(
         (n, i) =>
@@ -186,6 +188,11 @@ export const refineScriptTask = task({
     const { anchor, voiceOver, userMessage, scriptType } = payload;
 
     const isShort = scriptType === "short";
+
+     const groq = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
 
     // Count approximate words in current script to preserve length
     const anchorWordCount = anchor.trim().split(/\s+/).length;
