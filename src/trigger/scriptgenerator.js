@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import prisma from "../../DB/prisma.client";
 
 const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",
 });
 
