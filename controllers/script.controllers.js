@@ -58,7 +58,6 @@ export const generateScript = async (req, res) => {
   }
 };
 
-// ── POST /refine ─────────────────────────────────────────────────
 export const refineScript = async (req, res) => {
   try {
     const { anchor, voiceOver, userMessage, scriptType } = req.body;
@@ -70,7 +69,10 @@ export const refineScript = async (req, res) => {
       });
     }
     if (!scriptType || !["short", "long"].includes(scriptType)) {
-      return res.status(400).json({ success: false, message: "scriptType must be 'short' or 'long'" });
+      return res.status(400).json({
+        success: false,
+        message: "scriptType must be 'short' or 'long'",
+      });
     }
 
     const output = await triggerAndWait("refine-script", {
