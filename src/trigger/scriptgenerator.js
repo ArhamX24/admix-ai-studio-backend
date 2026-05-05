@@ -40,6 +40,56 @@ const extractJSON = (rawText) => {
   }
 };
 
+// ✅ Replace common Urdu characters with their Hindi Devanagari equivalents
+const fixUrduChars = (text) => {
+  if (!text) return text;
+  return text
+    // Common Urdu letter substitutions that slip into Hindi
+    .replace(/ہ/g, "ह")    // ha
+    .replace(/ے/g, "े")    // e matra
+    .replace(/ی/g, "ी")    // ee matra  
+    .replace(/ں/g, "ं")    // anusvara
+    .replace(/ک/g, "क")    // ka
+    .replace(/گ/g, "ग")    // ga
+    .replace(/ھ/g, "ह")    // ha (aspirated)
+    .replace(/چ/g, "च")    // cha
+    .replace(/ج/g, "ज")    // ja
+    .replace(/ز/g, "ज़")   // za
+    .replace(/ر/g, "र")    // ra
+    .replace(/و/g, "व")    // va
+    .replace(/ن/g, "न")    // na
+    .replace(/م/g, "म")    // ma
+    .replace(/ل/g, "ल")    // la
+    .replace(/ق/g, "क")    // qa
+    .replace(/ف/g, "फ")    // fa
+    .replace(/ع/g, "")     // ain — no Hindi equivalent, remove
+    .replace(/غ/g, "ग़")   // gha
+    .replace(/خ/g, "ख")    // kha
+    .replace(/ح/g, "ह")    // ha
+    .replace(/ص/g, "स")    // sa
+    .replace(/ط/g, "त")    // ta
+    .replace(/ذ/g, "ज़")   // za
+    .replace(/ث/g, "स")    // sa
+    .replace(/ض/g, "ज़")   // za
+    .replace(/ظ/g, "ज़")   // za
+    .replace(/ء/g, "")     // hamza — remove
+    .replace(/آ/g, "आ")    // aa
+    .replace(/ا/g, "अ")    // a
+    .replace(/ب/g, "ब")    // ba
+    .replace(/پ/g, "प")    // pa
+    .replace(/ت/g, "त")    // ta
+    .replace(/د/g, "द")    // da
+    .replace(/ڈ/g, "ड")    // da
+    .replace(/ژ/g, "झ")    // jha
+    .replace(/ش/g, "श")    // sha
+    .replace(/س/g, "स")    // sa
+    .replace(/ٹ/g, "ट")    // ta
+    .replace(/ڑ/g, "ड़")   // ra
+    .replace(/ڈ/g, "ड")    // da
+    // Clean up any remaining Arabic/Urdu Unicode block chars (U+0600 to U+06FF)
+    .replace(/[\u0600-\u06FF]/g, "");
+};
+
 // ── Task 1: Generate script ──────────────────────────────────────
 export const generateScriptTask = task({
   id: "generate-script",
@@ -63,7 +113,7 @@ export const generateScriptTask = task({
     const newsContext = newsItems
       .map(
         (n, i) =>
-          `News ${i + 1}:\nTitle: ${n.title}\nFull Summary:\n${n.hindiSummary}`
+          `News ${i + 1}:\nTitle: ${n.title}\nCore Facts:\n${n.hindiSummary}`
       )
       .join("\n\n");
 
@@ -82,42 +132,54 @@ export const generateScriptTask = task({
           messages: [
             {
               role: "system",
-              content: `You are an expert Hindi news short-video script writer for Indian TV/Reels.
+              content: `You are an expert Hindi viral news short-video script writer for Indian Reels/Shorts.
 
-OUTPUT: Raw JSON only. No markdown. No backticks. No explanation.
-JSON schema: { "anchor": "string", "voiceOver": "", "thumbnail": "string" }
+              OUTPUT: Raw JSON only. No markdown. No backticks.
+              JSON schema: { "anchor": "string", "voiceOver": "", "thumbnail": "string" }
 
-ANCHOR RULES — STRICTLY FOLLOW:
-- Total words: MINIMUM 110, MAXIMUM 130. Count every single word before responding.
-- If your anchor is less than 110 words — you have FAILED. Write more sentences.
-- Sentences: exactly 7 to 9. Each sentence ends with ... (three dots).
-- STRICT SENTENCE ORDER:
-  1. Shocking opening claim — direct, no build-up (e.g. "अब 10 साल की जेल...")
-  2. Credibility line — "जी हाँ..." or "ये सच है..."
-  3. Viewer connect — "अगर आप भी..." or "आपके साथ भी..."
-  4. News facts — what happened, who did it (2 sentences minimum)
-  5. Shocking twist or hidden detail (1-2 sentences)
-  6. Reason behind the news (1 sentence)
-  7. Strong CTA — "वीडियो शेयर करें... कमेंट में बताएं... और फॉलो करें"
-- Each sentence must be at least 12-18 words long to reach the word count.
-- Language: simple, conversational Hindi. No formal or bookish words.
-- NO repetition of any phrase or idea.
-- voiceOver must always be empty string "".
-- thumbnail: short punchy Hindi text (5-8 words max).${retryWarning}`,
+              STRICT GOAL:
+              Write a HIGH RETENTION spoken-Hindi short script that feels like a real Indian news reel.
+
+          ANCHOR RULES:
+          - Total words: 110 to 130 only.
+          - Sentences: exactly 7 to 8.
+          - Every sentence must end with ...
+          - Spoken Hindi only — natural, punchy, easy to say aloud.
+          - No formal or bookish language.
+          - No repeated idea.
+
+          RETENTION RULES (VERY IMPORTANT):
+          - Every 1-2 sentences MUST create a new hook, twist, or curiosity spike.
+          - At least 2 strong pattern interrupts are mandatory.
+          Examples:
+          "लेकिन असली बात ये नहीं है..."
+          "अब ध्यान से सुनिए..."
+          "यहीं से मामला बदल जाता है..."
+
+          STRICT FLOW:
+          1. Shocking opening claim
+          2. Credibility line ("जी हाँ..." or "ये सच है...")
+          3. Viewer connect ("अगर आप भी...")
+          4. Clear news fact
+          5. Twist / hidden angle
+          6. Why it matters to common people
+          7. Strong CTA
+        - thumbnail: short punchy Hindi text (5-8 words max).${retryWarning}`,
             },
             {
               role: "user",
               content: `Write a SHORT Reels/Shorts script for this news.
+        This must sound like a viral spoken news reel — not like a newspaper summary.
+        CRITICAL: anchor MUST be between 110 and 130 words. Count your words. If below 110 — keep writing more sentences until you reach 110.
 
-CRITICAL: anchor MUST be between 110 and 130 words. Count your words. If below 110 — keep writing more sentences until you reach 110.
+        ${newsContext}
 
-${newsContext}
-
-Return raw JSON only. voiceOver = "".`,
+        Return raw JSON only. voiceOver = "".
+        thumbnail: 4-7 words, high CTR Hindi text.`,
             },
           ],
           model: "openai/gpt-4o-mini",
-          temperature: 0.3,
+          temperature: 0.25,
           frequency_penalty: 0.8,
           presence_penalty: 0.6,
           max_completion_tokens: 7000,
@@ -149,8 +211,8 @@ Return raw JSON only. voiceOver = "".`,
       }
 
       console.log(`SUCCESS! Short script generated: ${wordCount} words`);
-      return {
-        anchor: parsed.anchor,
+     return {
+        anchor: fixUrduChars(parsed.anchor),
         voiceOver: "",
         thumbnail: parsed.thumbnail || "",
         scriptType: "short",
@@ -170,27 +232,44 @@ Return raw JSON only. voiceOver = "".`,
         messages: [
           {
             role: "system",
-            content: `You are a Hindi TV news anchor script writer.
+            content: `You are a Hindi TV/news reel anchor writer.
 
-OUTPUT: Raw JSON only. No markdown. No backticks.
-JSON schema: { "anchor": "string", "thumbnail": "string" }
+          OUTPUT: Raw JSON only.
+          JSON schema: { "anchor": "string", "thumbnail": "string" }
 
-ANCHOR RULES — STRICTLY FOLLOW:
-- Total words: MINIMUM 110, MAXIMUM 130. Count carefully before responding.
-- If anchor is less than 110 words — you have FAILED. Add more sentences.
-- Sentences: exactly 7 to 9. Each ends with ... (three dots).
-- Each sentence must be at least 12-18 words long.
-- Structure:
-  1. Big shocking claim or relief or fear (15+ words)
-  2. Direct viewer connect "अगर आप भी..." (15+ words)
-  3. Build curiosity — do NOT reveal full info yet (15+ words)
-  4. Ask 1 powerful question to the viewer (12+ words)
-  5. Hint at the solution or twist (15+ words)
-  6. More suspense — what will happen next (15+ words)
-  7. Strong hook to keep watching (15+ words)
-- Language: simple, emotional, relatable Hindi.
-- NO repetition. Every sentence must add something new.
-- thumbnail: punchy Hindi thumbnail text (5-8 words).${retryWarning}`,
+          GOAL:
+          Write a spoken-Hindi anchor that creates suspense and forces the viewer to continue.
+
+          RULES:
+          - 110 to 130 words only.
+          - 7 to 8 sentences only.
+          - Every sentence ends with ...
+          - Spoken Hindi only.
+          - Every sentence must introduce NEW information.
+
+          RETENTION RULES:
+          - At least 3 curiosity spikes must appear.
+          - At least 2 pattern interrupts are mandatory.
+          Examples:
+          "लेकिन असली बात अभी बाकी है..."
+          "अब सवाल ये है..."
+          "यहीं से कहानी बदलती है..."
+
+          STRUCTURE:
+          1. Big impact line
+          2. Viewer connect
+          3. Curiosity build
+          4. Strong question
+          5. Hint of reveal
+          6. Bigger twist
+          7. Hook to continue watching
+
+          IMPORTANT:
+          Do NOT sound like a newspaper.
+          Do NOT summarize the whole news.
+          Reveal only enough to keep watching.
+
+          thumbnail: 4-7 words, strong CTR Hindi text.${retryWarning}`,
           },
           {
             role: "user",
@@ -204,7 +283,7 @@ Raw JSON only.`,
           },
         ],
         model: "openai/gpt-4o-mini",
-        temperature: 0.3,
+        temperature: 0.25,
         frequency_penalty: 0.8,
         presence_penalty: 0.6,
         max_completion_tokens: 7000,
@@ -255,26 +334,52 @@ Do not stop writing until you have 600 words.`
         messages: [
           {
             role: "system",
-            content: `You are a Hindi TV news voice over script writer.
+            content: `You are an expert Hindi voice-over writer for Indian news reels and YouTube explainers.
 
-OUTPUT: Raw JSON only. No markdown. No backticks.
-JSON schema: { "voiceOver": "string" }
+            OUTPUT: Raw JSON only.
+            JSON schema: { "voiceOver": "string" }
 
-VOICE OVER RULES — STRICTLY FOLLOW:
-- Total words: MINIMUM 600, MAXIMUM 750. Count every word before responding.
-- If your output is less than 600 words — you have FAILED. Keep writing more sentences.
-- 8-step structure. Each step has a MINIMUM sentence count — do not skip:
-  Step 1 — Open with real scene/situation: 4 sentences minimum (रात, खेत, घर, समस्या)
-  Step 2 — Show problem and fear (real-life pain): 5 sentences minimum
-  Step 3 — Data point or fact for credibility: 3 sentences minimum
-  Step 4 — Slowly reveal solution: 6 sentences minimum
-  Step 5 — Explain solution in simple language: 5 sentences minimum
-  Step 6 — State clear benefits: 4 sentences minimum
-  Step 7 — Common man connect "अगर आप भी...": 3 sentences minimum
-  Step 8 — Strong CTA (share, comment, follow): 3 sentences minimum
-- Use ... after every 1-2 sentences for pause effect.
-- Language: simple, emotional, conversational Hindi. No bookish words.
-- CRITICAL: Do NOT repeat any phrase or sentence. Each sentence must add NEW information.
+            GOAL:
+            Write a HIGH-RETENTION spoken Hindi voice-over.
+            It should feel cinematic, emotional, and easy to speak aloud.
+
+            RULES:
+            - 600 to 750 words.
+            - Spoken Hindi only.
+            - No bookish language.
+            - No repeated sentence or repeated idea.
+
+            VERY IMPORTANT RETENTION RULES:
+            - Every 3-4 sentences must create a fresh hook, twist, or emotional shift.
+            - Use pattern interrupts naturally:
+            "लेकिन असली बात ये नहीं है..."
+            "अब ध्यान से समझिए..."
+            "यहीं से कहानी बदलती है..."
+            "लेकिन यहां एक बड़ा सवाल उठता है..."
+
+            STRUCTURE:
+            1. Real-life opening scene
+            2. Problem and emotional pain
+            3. Why common people suffer
+            4. Data / credibility
+            5. Slow reveal of solution
+            6. Simple explanation
+            7. Benefits to ordinary people
+            8. Strong emotional CTA
+
+            CRITICAL:
+            - This must sound spoken, not written.
+            - Every paragraph must feel like the story is moving forward.
+            - Never explain everything at once.
+            - Keep revealing information gradually.
+
+            If story becomes simple, add:
+            - practical example
+            - real-world effect
+            - emotional consequence
+
+            Do not write like a report.
+            Write like a viral voice-over.
 - If you run out of story — add relevant background, historical context, or examples. Never loop.${retryWarning}`,
           },
           {
@@ -323,8 +428,8 @@ Raw JSON only.`,
 
     console.log(`SUCCESS! Long script — anchor: ${anchorWordCount} words, voiceOver: ${voiceOverWordCount} words`);
     return {
-      anchor: anchorParsed.anchor,
-      voiceOver: voiceOverParsed.voiceOver,
+      anchor: fixUrduChars(anchorParsed.anchor),
+      voiceOver: fixUrduChars(voiceOverParsed.voiceOver),
       thumbnail: anchorParsed.thumbnail || "",
       scriptType: "long",
       newsIds,
@@ -500,8 +605,8 @@ export const refineScriptTask = task({
         // ✅ If retry also fails to parse — return original silently, no error to user
         console.warn("Retry parse failed — returning original");
         return {
-          anchor,
-          voiceOver: voiceOver || "",
+          anchor: fixUrduChars(anchor),
+          voiceOver: fixUrduChars(voiceOver || ""),
           changes: "Arre yaar thoda issue aa gaya — original script rakhi. Dobara try karo!",
         };
       }
@@ -513,28 +618,27 @@ export const refineScriptTask = task({
       if (outWords < minWords * 0.8) {
         console.warn(`Retry still too short (${outWords} words) — returning original for ${sectionLabel}`);
         return {
-          anchor,
-          voiceOver: voiceOver || "",
-          changes: "Yaar AI ne thoda chhota likh diya — original hi rakhi. Ek baar aur try karo!",
+          anchor: fixUrduChars(anchor),
+          voiceOver: fixUrduChars(voiceOver || ""),
+          changes: "Arre yaar thoda issue aa gaya — original script rakhi. Dobara try karo!",
         };
       }
     }
 
     console.log(`Refine SUCCESS — ${sectionLabel}: ${outWords} words. Changes: ${parsed.changes}`);
 
-    // ✅ Return only edited section — other section untouched
-    if (editVoiceOver) {
-      return {
-        anchor,                          // ✅ untouched
-        voiceOver: parsed.text,
-        changes: parsed.changes || "Voice over update ho gaya!",
-      };
-    } else {
-      return {
-        anchor: parsed.text,
-        voiceOver: voiceOver || "",      // ✅ untouched
-        changes: parsed.changes || "Anchor update ho gaya!",
-      };
-    }
-  },
+      if (editVoiceOver) {
+        return {
+          anchor,
+          voiceOver: fixUrduChars(parsed.text),  // ✅ clean Urdu chars
+          changes: parsed.changes || "Voice over update ho gaya!",
+        };
+      } else {
+        return {
+          anchor: fixUrduChars(parsed.text),     // ✅ clean Urdu chars
+          voiceOver: voiceOver || "",
+          changes: parsed.changes || "Anchor update ho gaya!",
+        };
+      }
+        },
 });
