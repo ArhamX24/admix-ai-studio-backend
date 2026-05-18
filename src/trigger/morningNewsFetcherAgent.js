@@ -2,20 +2,33 @@ import { task } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
 import prisma from "../../DB/prisma.client";
 
-// ✅ Safe JSON extractor — handles bad control chars and truncated responses
+// ── Trusted source names — lowercase for case-insensitive match ─
+const TRUSTED_SOURCES = new Set([
+  "bhaskar",
+  "news36live",
+  "news 18 hindi",
+  "hindustan",
+  "aaj tak",
+  "ndtv",
+  "zee news",
+  "abp news",
+  "navbharat live",
+  "jagran",
+  "news nation",
+  "india tv",
+  "times now navbharat",
+]);
+
+// ── Safe JSON extractor ──────────────────────────────────────────
 const extractJSON = (rawText) => {
-  // Step 1: Try direct parse first
   try {
     return JSON.parse(rawText);
   } catch (e) {}
 
-  // Step 2: Extract JSON object
   const match = rawText.match(/\{[\s\S]*\}/);
   if (!match) throw new Error(`No JSON found. Raw: ${rawText.slice(0, 200)}`);
 
   let jsonString = match[0];
-
-  // Step 3: Fix control characters
   jsonString = jsonString.replace(
     /"((?:[^"\\]|\\.)*)"/g,
     (m) => m.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")
@@ -25,7 +38,6 @@ const extractJSON = (rawText) => {
     return JSON.parse(jsonString);
   } catch (e) {}
 
-  // Step 4: Strip all control chars
   const cleaned = jsonString.replace(/[\x00-\x1F\x7F]/g, (char) => {
     if (char === "\n") return "\\n";
     if (char === "\r") return "\\r";
@@ -37,17 +49,13 @@ const extractJSON = (rawText) => {
     return JSON.parse(cleaned);
   } catch (e) {}
 
-  // Step 5: Salvage truncated articles array
+  // Salvage truncated arrays
   try {
     const completeObjects = [];
-    let depth = 0;
-    let start = -1;
-    let inString = false;
-    let escape = false;
+    let depth = 0, start = -1, inString = false, escape = false;
 
     for (let i = 0; i < cleaned.length; i++) {
       const char = cleaned[i];
-
       if (escape) { escape = false; continue; }
       if (char === '\\' && inString) { escape = true; continue; }
       if (char === '"') { inString = !inString; continue; }
@@ -69,69 +77,24 @@ const extractJSON = (rawText) => {
     }
 
     if (completeObjects.length > 0) {
-      console.warn(`JSON truncated — salvaged ${completeObjects.length} complete objects`);
-      // ✅ Handle both { articles: [...] } and { voiceOver: "..." } shapes
-      if (completeObjects[0]?.title || completeObjects[0]?.link) {
-        return { articles: completeObjects };
-      }
-      return completeObjects[0]; // single object like voiceOver, hindiSummary etc
+      console.warn(`JSON truncated — salvaged ${completeObjects.length} objects`);
+      return { selectedIndexes: completeObjects.flatMap(o => o.selectedIndexes || []) };
     }
-  } catch (salvageError) {}
+  } catch (e) {}
 
-  throw new Error(`Failed to parse JSON after all attempts. Raw: ${rawText.slice(0, 200)}`);
-};
-// ✅ Scrape full article text from URL
-const scrapeArticle = async (url) => {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "hi-IN,hi;q=0.9,en;q=0.8",
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) return null;
-
-    const html = await res.text();
-
-    const extractText = (html) => {
-      let cleaned = html
-        .replace(/<script[\s\S]*?<\/script>/gi, "")
-        .replace(/<style[\s\S]*?<\/style>/gi, "")
-        .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-        .replace(/<header[\s\S]*?<\/header>/gi, "")
-        .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-        .replace(/<aside[\s\S]*?<\/aside>/gi, "")
-        .replace(/<!--[\s\S]*?-->/g, "");
-
-      const articleMatch = cleaned.match(/<article[\s\S]*?<\/article>/i);
-      const mainMatch = cleaned.match(/<main[\s\S]*?<\/main>/i);
-      const contentSource = articleMatch?.[0] || mainMatch?.[0] || cleaned;
-
-      const text = contentSource
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/\s+/g, " ")
-        .trim();
-
-      return text;
-    };
-
-    const text = extractText(html);
-    return text.length > 200 ? text.slice(0, 3000) : null;
-
-  } catch (e) {
-    console.log(`Scrape failed for URL: ${url} — ${e.message}`);
-    return null;
-  }
+  throw new Error(`Failed to parse JSON. Raw: ${rawText.slice(0, 200)}`);
 };
 
+// ── Fetch one page from newsdata.io ─────────────────────────────
+const fetchPage = async (url) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`newsdata.io HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.status !== "success") throw new Error(`newsdata.io error: ${JSON.stringify(data)}`);
+  return data;
+};
+
+// ── Main task ────────────────────────────────────────────────────
 export const fetchNewsTask = task({
   id: "morning-news-fetcher",
   retry: { maxAttempts: 1 },
@@ -139,47 +102,92 @@ export const fetchNewsTask = task({
   run: async (payload) => {
     const { category } = payload;
 
-    // ── Step 1: Fetch news from Newsdata.io ──────────────────────
-    const url = `https://newsdata.io/api/1/latest?apikey=${process.env.NEWSDATA_IO_API_KEY}&q=${category}&language=hi&country=in`;
-    const res = await fetch(url);
-    const page1 = await res.json();
+    const API_KEY = process.env.NEWSDATA_IO_API_KEY;
 
-    console.log("Newsdata.io status:", page1.status);
-    console.log("Results count:", page1.results?.length ?? "no results field");
+    // NOTE: We do NOT use domainurl param — it may not be available on all plans
+    // and encoding issues can silently return 0 results.
+    // Instead we fetch broadly (language=hi, country=in) and filter by source_name client-side.
+    const BASE_URL =
+      `https://newsdata.io/api/1/latest` +
+      `?apikey=${API_KEY}` +
+      `&q=${encodeURIComponent(category)}` +
+      `&language=hi` +
+      `&country=in`;
 
-    if (page1.status !== "success") {
-      throw new Error(`Newsdata.io API error: ${JSON.stringify(page1.results || page1)}`);
-    }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    if (!page1.results || page1.results.length === 0) {
-      throw new Error(`No news found for category: ${category}`);
-    }
+    // ── Paginate up to 20 pages (20 × 10 = 200 max) ─────────────
+    let allResults = [];
+    let nextPage = null;
+    let pageCount = 0;
+    const MAX_PAGES = 20;
 
-    let allResults = [...page1.results];
+    do {
+      const pageUrl = nextPage ? `${BASE_URL}&page=${nextPage}` : BASE_URL;;
 
-    if (page1.nextPage) {
       try {
-        const url2 = `https://newsdata.io/api/1/latest?apikey=${process.env.NEWSDATA_IO_API_KEY}&q=${category}&language=hi&country=in&page=${page1.nextPage}`;
-        const res2 = await fetch(url2);
-        const page2 = await res2.json();
-        if (page2.status === "success" && page2.results?.length > 0) {
-          allResults = [...allResults, ...page2.results];
-        }
+        const data = await fetchPage(pageUrl);
+        if (!data.results?.length) break;
+
+        allResults.push(...data.results);
+        nextPage = data.nextPage || null;
+        pageCount++;
+
+        console.log(`Page ${pageCount} — running total: ${allResults.length}`);
       } catch (e) {
-        console.log("Page 2 fetch failed, continuing:", e.message);
+        console.warn(`Page ${pageCount + 1} failed: ${e.message} — stopping pagination`);
+        break;
       }
+
+      if (nextPage && pageCount < MAX_PAGES) await sleep(300);
+    } while (nextPage && pageCount < MAX_PAGES);
+
+
+    // ── Deduplicate by article_id ────────────────────────────────
+    const seen = new Set();
+    const unique = allResults.filter((a) => {
+      if (!a.article_id || seen.has(a.article_id)) return false;
+      seen.add(a.article_id);
+      return true;
+    });
+
+    // ── Filter: trusted sources only (case-insensitive) ─────────
+    const allSourceNames = [...new Set(unique.map(a => a.source_name).filter(Boolean))];
+    console.log(`All source_names in response: ${JSON.stringify(allSourceNames)}`);
+
+    const trusted = unique.filter(
+      (a) => a.source_name && TRUSTED_SOURCES.has(a.source_name.toLowerCase().trim()) && !a.duplicate
+    );
+
+    // If no trusted sources found, fall back to ALL unique articles so task doesn't fail.
+    // The AI will still pick the best 50 — we just won't have source filtering.
+    const articlesToRank = trusted.length > 0 ? trusted : unique;
+
+    if (articlesToRank.length === 0) {
+      throw new Error(`No articles found at all for category "${category}". API returned 0 results.`);
     }
 
-    // ✅ Trim fields to prevent prompt overflow
-    const articlesToProcess = allResults.slice(0, 10).map(a => ({
-      title: a.title || "",
-      description: (a.description || "").slice(0, 300), // cap at 300 chars
-      link: a.link || "",
-      image_url: a.image_url || null,
-      source_name: a.source_name || "",
-      source_url: a.source_url || "",
-      pubDate: a.pubDate || "",
-      keywords: a.keywords || [],
+    if (trusted.length === 0) {
+      console.warn(
+        `WARNING: 0 trusted-source matches. Known sources: ${JSON.stringify(allSourceNames.slice(0, 20))}. ` +
+        `Falling back to all ${unique.length} articles without source filter.`
+      );
+    }
+
+    // ── Sort by source_priority (lower = more authoritative) ──────
+    const sorted = [...articlesToRank].sort(
+      (a, b) => (a.source_priority ?? 999999) - (b.source_priority ?? 999999)
+    );
+
+    // ── Take top 100 for AI selection (cap prompt size) ───────────
+    const candidates = sorted.slice(0, 100);
+
+    // ── Strip fields to minimal for AI prompt ─────────────────────
+    const titlesForAI = candidates.map((a, i) => ({
+      index: i,
+      title: (a.title || "").slice(0, 200),
+      source: a.source_name || "",
+      priority: a.source_priority ?? 999999,
     }));
 
     const openRouter = new OpenAI({
@@ -194,160 +202,113 @@ export const fetchNewsTask = task({
       business: "बाजार, economy, jobs और आम आदमी की जेब पर असर डालने वाली business खबरें",
       lifestyle: "health, wellness, trending और आम जीवन से सीधे जुड़ी lifestyle खबरें",
     };
-
     const categoryTone = categoryToneMap[category] || `${category} से जुड़ी सबसे impactful खबरें`;
 
-// ── Step 2: AI selects best article TITLES only ──────────────────
-// ✅ Send only titles to AI — tiny prompt, no truncation possible
-const titlesOnly = articlesToProcess.map((a, i) => ({
-  index: i,
-  title: (a.title || "").slice(0, 200),
-}));
+    // ── AI selects best 50 ────────────────────────────────────────
+    const selectionPrompt = `
+You are a senior Hindi news editor for a major Indian TV channel.
 
-const selectionPrompt = `
-You are a senior Hindi news editor. From the list below, pick the best 10-12 news articles.
+From the list below, select the BEST 50 articles for today's ${category} news bulletin.
 
 Category focus: ${categoryTone}
 
-Selection criteria:
-1. High impact on common Indians
-2. Unique — no duplicates or similar stories
-3. High viral potential
-4. Latest and breaking news preferred
+Selection criteria (in order of priority):
+1. High impact on common Indians — pick stories that affect daily life
+2. Breaking or latest news preferred over older stories
+3. Unique stories — NO duplicates or near-identical stories
+4. High viral and emotional resonance
+5. Avoid repetitive crime/accident filler; prefer substantive journalism
+6. Prefer stories from authoritative sources (lower priority number = better)
 
-Return ONLY valid JSON:
+Return ONLY valid JSON — no explanation, no markdown:
 {
-  "selectedIndexes": [0, 2, 4, 7, 9, 11, 13, 15, 17, 19]
+  "selectedIndexes": [0, 3, 7, 12, ...]
 }
 
-Articles (index + title only):
-${JSON.stringify(titlesOnly)}
-`;
+Select exactly 50 indexes (or fewer if total articles < 50).
 
-const selectionCompletion = await openRouter.chat.completions.create({
-  messages: [
-    {
-      role: "system",
-      content: "You are a senior Hindi news editor. Output ONLY valid JSON with selectedIndexes array.",
-    },
-    { role: "user", content: selectionPrompt },
-  ],
-  model: "openai/gpt-4o-mini",
-  temperature: 0.2,
-  max_completion_tokens: 1000,
-  response_format: { type: "json_object" },
-});
+Articles:
+${JSON.stringify(titlesForAI)}
+`.trim();
 
-const selectionParsed = extractJSON(selectionCompletion.choices[0].message.content);
-const selectedIndexes = selectionParsed.selectedIndexes || [];
+    const selectionCompletion = await openRouter.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a senior Hindi news editor. Output ONLY valid JSON with a selectedIndexes array of integers.",
+        },
+        { role: "user", content: selectionPrompt },
+      ],
+      model: "openai/gpt-4o-mini",
+      temperature: 0.2,
+      max_completion_tokens: 1000,
+      response_format: { type: "json_object" },
+    });
 
-if (!selectedIndexes || selectedIndexes.length === 0) {
-  throw new Error("AI returned empty selectedIndexes");
-}
+    const selectionParsed = extractJSON(
+      selectionCompletion.choices[0].message.content
+    );
+    const selectedIndexes = (selectionParsed.selectedIndexes || []).slice(0, 50);
 
-// ✅ Use indexes to pick original articles — no AI truncation risk
-const selectedArticles = selectedIndexes
-  .filter(i => i >= 0 && i < articlesToProcess.length)
-  .map(i => articlesToProcess[i]);
+    if (!selectedIndexes.length) {
+      throw new Error("AI returned empty selectedIndexes");
+    }
 
-console.log(`Selected ${selectedArticles.length} articles by index`);
+    const selectedArticles = selectedIndexes
+      .filter((i) => i >= 0 && i < candidates.length)
+      .map((i) => candidates[i]);
 
-    // ── Step 3: Scrape + generate rich Hindi summary per article ─
-    const enrichedArticles = [];
 
-    for (const article of selectedArticles) {
-      console.log(`Scraping: ${article.link}`);
+    // ── Save to DB — one row per category the article belongs to ──
+    // newsdata.io returns category as an array e.g. ["crime", "top"].
+    // We save a separate row per category so the article shows up in
+    // every relevant feed. The requested category is always included.
+    const toSave = [];
 
-      const fullText = await scrapeArticle(article.link);
+    for (const item of selectedArticles) {
+      // Always include the requested category + any others from the article
+      const articleCategories = Array.isArray(item.category) && item.category.length > 0
+        ? item.category
+        : [category];
 
-      const sourceMaterial = fullText
-        ? `Title: ${article.title}\n\nFull Article Content:\n${fullText}`
-        : `Title: ${article.title}\n\nDescription: ${article.description || "No description available"}`;
+      // Deduplicate: ensure requested category is always present
+      const categorySet = new Set([
+        category,
+        ...articleCategories.map(c => c.toLowerCase().trim()),
+      ]);
 
-      console.log(`Source: ${sourceMaterial.length} chars — ${fullText ? "scraped" : "fallback to description"}`);
-
-      try {
-        const summaryCompletion = await openRouter.chat.completions.create({
-          messages: [
-            {
-              role: "system",
-              content: `You are a senior Hindi journalist. Write a detailed factual Hindi news summary.
-
-OUTPUT: Raw JSON only. No markdown. No backticks.
-JSON schema: { "hindiSummary": "string" }
-
-HINDI SUMMARY RULES:
-- Length: MINIMUM 500 words, MAXIMUM 700 words. Count every word.
-- Language: Clear, professional broadcast Hindi. Simple for common people.
-- Structure:
-  1. What happened — core news in 3-4 sentences
-  2. Who is involved — key people, organizations, places
-  3. Why it happened — background and reason
-  4. How it happened — sequence of events with details
-  5. What is the impact — on common people, society, economy
-  6. What happens next — expected outcomes, reactions
-  7. Key facts and numbers — statistics, dates, figures mentioned
-- Include ALL important facts, names, numbers from the source.
-- Do NOT add fictional information — only use what is in the source.
-- If source is short — expand with relevant context about the topic.
-- NO repetition. Every paragraph must add new information.`,
-            },
-            {
-              role: "user",
-              content: `Write a detailed Hindi summary (500-700 words) for this news article.
-
-${sourceMaterial}
-
-Return raw JSON only: { "hindiSummary": "..." }`,
-            },
-          ],
-          model: "openai/gpt-4o-mini",
-          temperature: 0.3,
-          frequency_penalty: 0.7,
-          presence_penalty: 0.5,
-          max_tokens: 4000,
-          response_format: { type: "json_object" },
-        });
-
-        // ✅ Use extractJSON instead of JSON.parse
-        const summaryParsed = extractJSON(summaryCompletion.choices[0].message.content);
-        const hindiSummary = summaryParsed.hindiSummary || article.description || "";
-        const summaryWordCount = hindiSummary.trim().split(/\s+/).length;
-
-        console.log(`Summary: ${summaryWordCount} words for "${article.title.slice(0, 50)}..."`);
-
-        enrichedArticles.push({
-          ...article,
-          hindiSummary,
-        });
-
-      } catch (summaryError) {
-        // Fallback — don't skip article if summary fails
-        console.warn(`Summary failed for "${article.title}" — using description as fallback. Error: ${summaryError.message}`);
-        enrichedArticles.push({
-          ...article,
-          hindiSummary: article.description || article.title,
+      for (const cat of categorySet) {
+        toSave.push({
+          title: item.title || "",
+          hindiSummary: "",           // empty — generated on-demand
+          description: (item.description || "").slice(0, 1000),
+          link: item.link || "",
+          image_url: item.image_url || "",
+          source_name: item.source_name || "",
+          source_url: item.source_url || "",
+          category: cat,
+          pubDate: item.pubDate || "",
+          keywords: item.keywords || [],
         });
       }
     }
 
-    // ── Step 4: Save all enriched articles to DB ─────────────────
-    await prisma.morningAiNewsFetch.createMany({
-      data: enrichedArticles.map((item) => ({
-        title: item?.title || "",
-        hindiSummary: item?.hindiSummary || "",
-        description: item?.description || "",
-        link: item?.link || "",
-        image_url: item?.image_url || "",
-        source_name: item?.source_name || "",
-        source_url: item?.source_url || "",
-        category: item?.category || category,
-        pubDate: item?.pubDate || "",
-        keywords: item?.keywords || [],
-      })),
+    // Deduplicate by link+category to avoid constraint errors on re-runs
+    const seenKey = new Set();
+    const uniqueToSave = toSave.filter(row => {
+      const key = `${row.link}__${row.category}`;
+      if (seenKey.has(key)) return false;
+      seenKey.add(key);
+      return true;
     });
 
-    console.log(`SUCCESS! ${enrichedArticles.length} articles saved with rich Hindi summaries.`);
-    return enrichedArticles;
+    await prisma.morningAiNewsFetch.createMany({
+      data: uniqueToSave,
+      skipDuplicates: true,
+    });
+
+    // Return only rows matching the requested category for the API response
+    return uniqueToSave.filter(r => r.category === category);
   },
 });

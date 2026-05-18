@@ -1,10 +1,15 @@
 import express from 'express'
-import { getMorningNews, getMorningNewsTester } from '../controllers/morning-news-fetcher.js'
+import {
+  getMorningNews,
+  getMorningNewsTester,
+  generateArticleSummary,
+} from '../controllers/morning-news-fetcher.js'
 
 let morningNewsFetcherRouter = express.Router()
 
-
-morningNewsFetcherRouter.post("/get-morning-news", getMorningNews)
-.get("/test", getMorningNewsTester)
+morningNewsFetcherRouter
+  .post("/get-morning-news", getMorningNews)
+  .post("/generate-article-summary", generateArticleSummary)  
+  .get("/test", getMorningNewsTester)
 
 export default morningNewsFetcherRouter

@@ -13,6 +13,7 @@ import multer from "multer";
 import { serve } from "inngest/express";
 
 // Routes & Clients
+import { authenticateToken } from "./middlewares/auth.middleware.js";
 import inngest from "./inngest/client/client.js";
 import prisma from "./DB/prisma.client.js";
 import userRouter from "./routes/user.routes.js";
@@ -22,7 +23,7 @@ import videoAgentRouter from "./routes/video-agent.routes.js";
 import scriptGeneratorRouter from "./routes/script.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import newsRouter from "./routes/news-agent.routes.js";
-import { authenticateToken } from "./middlewares/auth.middleware.js";
+import thumbnailRouter from "./routes/thumbnail.generation.routes.js";
 
 // Inngest Functions
 import { newsOptimizerFunction } from "./inngest/functions/news-agent.functions.js";
@@ -121,7 +122,8 @@ server.use("/api/v1/morning-news-fetcher", morningNewsFetcherRouter)
 // Protected Routes
 server.use("/api/v1/admin", adminRouter);
 server.use("/api/v1/agent", authenticateToken, newsRouter);
-server.use("/api/v1/scripts", scriptGeneratorRouter); // Make sure you want this public? If not, add authenticateToken
+server.use("/api/v1/scripts", scriptGeneratorRouter);
+server.use("/api/v1/thumbnail", authenticateToken, thumbnailRouter); 
 server.use("/api/v1/speech", speechRouter);   
 server.use("/api/v1/video", videoAgentRouter); 
 
