@@ -19,7 +19,7 @@ const LOGO_MAP = {
   ycity:   path.resolve(__dirname, "../Logos/YCITY LOGO.png"),
 };
 
-const openai = new OpenAI({ apiKey: process.env.ADMIX_OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const SIZE_MAP = {
   youtube: "1536x1024",

@@ -16,7 +16,6 @@ import inngest from "./inngest/client/client.js";
 import prisma from "./DB/prisma.client.js";
 import userRouter from "./routes/user.routes.js";
 import AuthRouter from "./routes/auth.routes.js";
-import speechRouter from "./routes/speech-agent.routes.js";
 import videoAgentRouter from "./routes/video-agent.routes.js";
 import scriptGeneratorRouter from "./routes/script.routes.js";
 import adminRouter from "./routes/admin.routes.js";
@@ -121,8 +120,7 @@ server.use("/api/v1/morning-news-fetcher", morningNewsFetcherRouter)
 server.use("/api/v1/admin", adminRouter);
 server.use("/api/v1/agent", authenticateToken, newsRouter);
 server.use("/api/v1/scripts", scriptGeneratorRouter);
-server.use("/api/v1/thumbnail", authenticateToken, thumbnailRouter); 
-server.use("/api/v1/speech", speechRouter);   
+server.use("/api/v1/thumbnail", authenticateToken, thumbnailRouter);   
 server.use("/api/v1/video", videoAgentRouter); 
 
 // Root check
