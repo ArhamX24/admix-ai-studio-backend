@@ -2,11 +2,16 @@ import inngest from "../inngest/client/client.js";
 import prisma from "../DB/prisma.client.js";
 import axios from "axios";
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 // Initialize Supabase client
 const supabase = createClient(
   process.env.SUPABASE_PROJECT_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY {
+    realtime: {
+      transport: WebSocket, 
+    }
+  }
 );
 
 const generateSpeech = async (req, res) => {
