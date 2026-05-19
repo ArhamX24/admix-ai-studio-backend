@@ -7,7 +7,7 @@ import WebSocket from 'ws';
 
 const supabase = createClient(
   "https://aseasamyxwculfqsvxkx.supabase.co",
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzZWFzYW15eHdjdWxmcXN2eGt4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODk4NTA5NCwiZXhwIjoyMDg0NTYxMDk0fQ.4zWR04zf7Tluiq7ugUMrVcKcypPGs8g9vUDH5v-VV4U",
   {
     realtime: {
       transport: WebSocket, 
