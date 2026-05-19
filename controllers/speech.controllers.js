@@ -4,10 +4,11 @@ import axios from "axios";
 import { createClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
 
-// Initialize Supabase client
+
 const supabase = createClient(
-  process.env.SUPABASE_PROJECT_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  "https://aseasamyxwculfqsvxkx.supabase.co",
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
     realtime: {
       transport: WebSocket, 
     }
