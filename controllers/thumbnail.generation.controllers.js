@@ -19,7 +19,6 @@ const LOGO_MAP = {
   ycity:   path.resolve(__dirname, "../Logos/YCITY LOGO.png"),
 };
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const SIZE_MAP = {
   youtube: "1536x1024",
@@ -114,6 +113,8 @@ const buildRichPrompt = async (anchor, thumbnailType, userInstruction = null) =>
     ? `\nUser wants this specific change: "${userInstruction}". Keep everything else identical.`
     : "";
 
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
@@ -155,6 +156,9 @@ Write a detailed prompt following these sections:
 
 // ── Build refined prompt via gpt-4o ─────────────────────────────
 const buildRefinePrompt = async (userInstruction, previousPrompt) => {
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
@@ -189,6 +193,8 @@ Rewrite the prompt keeping everything identical except the requested change.`,
 const generateImage = async (prompt, thumbnailType, channelName = null) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180_000);
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
   try {
     const response = await openai.images.generate(
@@ -232,6 +238,8 @@ const refineImage = async (prompt, imageKey, thumbnailType, channelName = null) 
     if (!buffer) throw new Error("EXPIRED");
 
     const imageFile = await toFile(buffer, "image.png", { type: "image/png" });
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
     const response = await openai.images.edit(
       {
