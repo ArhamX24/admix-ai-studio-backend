@@ -302,6 +302,7 @@ export const generateThumbnail = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("[thumbnail] generation error:", error.message);
     if (error.name === "AbortError")
       return res.status(504).json({ success: false, message: "Generation timed out. Please try again." });
     if (error?.status === 429)
