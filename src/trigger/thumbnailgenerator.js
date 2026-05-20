@@ -1,10 +1,12 @@
+import dotenv from "dotenv";
+dotenv.config();
 import { task } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
 
 // ── OpenAI direct client for DALL-E (NOT OpenRouter) ────────────
 const getOpenAIClient = () =>
   new OpenAI({
-    apiKey: process.env.ADMIX_OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY,
   });
 
 // ── Helper: build prompt from script ────────────────────────────

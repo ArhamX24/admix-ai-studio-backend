@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import prisma from "../../DB/prisma.client.js";
 import inngest from "../client/client.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";

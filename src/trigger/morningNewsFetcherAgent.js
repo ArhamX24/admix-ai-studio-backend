@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import { task } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
 import prisma from "../../DB/prisma.client";
@@ -104,9 +106,6 @@ export const fetchNewsTask = task({
 
     const API_KEY = process.env.NEWSDATA_IO_API_KEY;
 
-    // NOTE: We do NOT use domainurl param — it may not be available on all plans
-    // and encoding issues can silently return 0 results.
-    // Instead we fetch broadly (language=hi, country=in) and filter by source_name client-side.
     const BASE_URL =
       `https://newsdata.io/api/1/latest` +
       `?apikey=${API_KEY}` +

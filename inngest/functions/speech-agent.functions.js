@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import inngest from "../client/client.js";
 import prisma from "../../DB/prisma.client.js";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
