@@ -1,4 +1,6 @@
 // thumbnail.generation.controllers.js
+import dotenv from "dotenv";
+dotenv.config();
 import OpenAI from "openai";
 import { toFile } from "openai";
 import sharp from "sharp";
