@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import { newsAgent } from "../inngest/agent/agent.js";
 import inngest from "../inngest/client/client.js";
 import prisma from "../DB/prisma.client.js";

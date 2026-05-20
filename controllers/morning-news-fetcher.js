@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import { runs, tasks } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
 import prisma from "../DB/prisma.client.js";

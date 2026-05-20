@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import { tasks, runs } from "@trigger.dev/sdk/v3";
 import prisma from "../DB/prisma.client.js";
 
