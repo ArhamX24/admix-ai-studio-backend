@@ -1,8 +1,14 @@
 import dotenv from "dotenv";
 dotenv.config();
-import { runs, tasks } from "@trigger.dev/sdk/v3";
 import OpenAI from "openai";
 import prisma from "../DB/prisma.client.js";
+
+// ── Trusted sources ──────────────────────────────────────────────
+const TRUSTED_SOURCES = new Set([
+  "bhaskar", "news36live", "news 18 hindi", "hindustan", "aaj tak",
+  "ndtv", "zee news", "abp news", "navbharat live", "jagran",
+  "news nation", "india tv", "times now navbharat",
+]);
 
 // ── Safe JSON extractor ──────────────────────────────────────────
 const extractJSON = (rawText) => {
@@ -65,36 +71,156 @@ const scrapeArticle = async (url) => {
 
     return text.length > 200 ? text.slice(0, 4000) : null;
   } catch (e) {
-
     return null;
   }
 };
 
-// ────────────────────────────────────────────────────────────────
-// GET /get-morning-news  — fetch (or trigger) news list
-// ────────────────────────────────────────────────────────────────
+// ── Core fetch logic ─────────────────────────────────────────────
+const fetchAndSaveNews = async (category, forceRefresh = false) => {
+  const API_KEY = process.env.NEWSDATA_IO_API_KEY;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  if (!forceRefresh) {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentCount = await prisma.morningAiNewsFetch.count({
+      where: { category, createdAt: { gte: twentyFourHoursAgo } },
+    });
+    if (recentCount > 0) {
+      console.log(`[FETCH] Fresh news already exists for "${category}". Skipping.`);
+      return [];
+    }
+  } else {
+    console.log(`[FETCH] Force refresh triggered for "${category}". Bypassing time lock.`);
+  }
+
+  // Load existing links AND titles from DB to ensure 100% unique news
+  const existingRecords = await prisma.morningAiNewsFetch.findMany({
+    where: { category },
+    select: { link: true, title: true },
+  });
+  const existingLinks = new Set(existingRecords.map((r) => r.link));
+  const existingTitles = new Set(existingRecords.map((r) => (r.title || "").trim().toLowerCase()));
+
+  const BASE_URL =
+    `https://newsdata.io/api/1/latest` +
+    `?apikey=${API_KEY}` +
+    `&q=${encodeURIComponent(category)}` +
+    `&language=hi` +
+    `&country=in` +
+    `&removeduplicate=1`;
+
+  const MAX_PAGES = 20;
+  const TARGET_NEW_ARTICLES = 40;
+
+  let allResults = [];
+  let nextPage = null;
+  let pageCount = 0;
+
+  do {
+    const pageUrl = nextPage ? `${BASE_URL}&page=${nextPage}` : BASE_URL;
+
+    try {
+      const res = await fetch(pageUrl);
+      if (!res.ok) throw new Error(`newsdata.io HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(`newsdata.io error: ${JSON.stringify(data)}`);
+      if (!data.results?.length) break;
+
+      // ✅ STRICT FILTERING: Only accept articles that are BOTH Trusted AND Unique
+      const freshTrusted = data.results.filter((a) => {
+        // 1. Check if source is trusted
+        const isTrusted = a.source_name && TRUSTED_SOURCES.has(a.source_name.toLowerCase().trim()) && !a.duplicate;
+        if (!isTrusted) return false;
+
+        // 2. Check if it's unique against the database
+        const titleMatch = (a.title || "").trim().toLowerCase();
+        const isUnique = !existingLinks.has(a.link) && !existingTitles.has(titleMatch);
+        
+        return isUnique;
+      });
+      
+      allResults.push(...freshTrusted);
+
+      nextPage = data.nextPage || null;
+      pageCount++;
+
+      if (allResults.length >= TARGET_NEW_ARTICLES) {
+        console.log(`[FETCH] Found ${allResults.length} fresh trusted articles. Stopping early.`);
+        break;
+      }
+    } catch (e) {
+      console.error(`[FETCH] Page error:`, e.message);
+      break;
+    }
+
+    if (nextPage && pageCount < MAX_PAGES) await sleep(300);
+  } while (nextPage && pageCount < MAX_PAGES);
+
+  // Local deduplication inside the current batch (in case API returns duplicates across pages)
+  const seenLocally = new Set();
+  const finalArticles = allResults.filter((a) => {
+    const key = a.article_id || a.link;
+    if (!key || seenLocally.has(key)) return false;
+    seenLocally.add(key);
+    return true;
+  });
+
+  // ✅ STRICT REQUIREMENT: If no trusted sources found, return empty array.
+  // The controller will then just return the original existing DB records.
+  if (finalArticles.length === 0) {
+    console.log(`[FETCH] No new unique articles from TRUSTED SOURCES found for "${category}". Retaining existing.`);
+    return [];
+  }
+
+  // Build save list
+  const toSave = [];
+  const seenLink = new Set();
+
+  for (const item of finalArticles) {
+    if (seenLink.has(item.link)) continue;
+    seenLink.add(item.link);
+
+    toSave.push({
+      title: item.title || "",
+      hindiSummary: "",
+      description: (item.description || "").slice(0, 1000),
+      link: item.link || "",
+      image_url: item.image_url || "",
+      source_name: item.source_name || "",
+      source_url: item.source_url || "",
+      category,
+      pubDate: item.pubDate || "",
+      keywords: item.keywords || [],
+    });
+  }
+
+  console.log(`[FETCH] Saving ${toSave.length} brand new unique trusted articles to DB.`);
+  await prisma.morningAiNewsFetch.createMany({
+    data: toSave,
+    skipDuplicates: true,
+  });
+
+  return toSave;
+};
+
+// ── In-memory lock map (prevents concurrent fetches per category) ─
+const inFlightFetches = new Map();
+
+// ── getMorningNews controller ────────────────────────────────────
 const getMorningNews = async (req, res) => {
   try {
-    const { category, forceRefresh = false } = req?.body;
-
-    if (!category) {
-      return res.status(400).json({ error: "Category is required." });
-    }
+    const { category, forceRefresh = false } = req?.body || {};
+    if (!category) return res.status(400).json({ error: "Category is required." });
 
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    if (forceRefresh) {
-      await prisma.morningAiNewsFetch.deleteMany({ where: { category } });
-    } else {
+    // 1. Return cached DB data unless forceRefresh
+    if (!forceRefresh) {
       const existingNews = await prisma.morningAiNewsFetch.findMany({
-        where: {
-          category,
-          createdAt: { gte: twentyFourHoursAgo },
-        },
+        where: { category, createdAt: { gte: twentyFourHoursAgo } },
         orderBy: { createdAt: "desc" },
         take: 50,
       });
-
       if (existingNews.length > 0) {
         return res.status(200).json({
           success: true,
@@ -104,50 +230,43 @@ const getMorningNews = async (req, res) => {
       }
     }
 
-   // Trigger fresh fetch
-    const result = await tasks.trigger("morning-news-fetcher", { category });
-    let run = await runs.retrieve(result.id);
-
-    while (!run.isCompleted) {
-      await new Promise((r) => setTimeout(r, 1000));
-      run = await runs.retrieve(result.id);
+    // 2. Lock mechanism for fetching
+    if (!inFlightFetches.has(category)) {
+      // ✅ FIX 5: Pass forceRefresh to fetchAndSaveNews
+      const fetchPromise = fetchAndSaveNews(category, forceRefresh).finally(() => {
+        inFlightFetches.delete(category);
+      });
+      inFlightFetches.set(category, fetchPromise);
+    } else {
+      console.log(`[LOCK] Attaching to in-flight fetch for "${category}"`);
     }
 
-    if (run.status === "FAILED" || run.status === "CANCELED") {
-      throw new Error("AI Agent failed to generate news. Please try again.");
-    }
+    await inFlightFetches.get(category);
 
-    // THE FIX: Instead of returning run.output, fetch the newly saved items from the DB
-    // so they have the proper Prisma UUIDs attached!
-    const newlySavedNews = await prisma.morningAiNewsFetch.findMany({
-      where: {
-        category,
-        createdAt: { gte: twentyFourHoursAgo },
-      },
+    // 3. Read back from DB so all callers get consistent, full records
+    // This will now include the freshly fetched records, sorted by newest
+    const freshNews = await prisma.morningAiNewsFetch.findMany({
+      where: { category, createdAt: { gte: twentyFourHoursAgo } },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
 
     return res.status(200).json({
       success: true,
-      message: `Successfully generated fresh ${category} news!`,
-      data: newlySavedNews, // <--- Returns properly formatted DB rows
+      message: forceRefresh 
+        ? `Successfully checked for new unique ${category} news!` 
+        : `Fetched ${category} news successfully!`,
+      data: freshNews,
     });
-    
   } catch (error) {
-
+    console.error("Error in getMorningNews:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ────────────────────────────────────────────────────────────────
-// POST /generate-article-script
-// Body: { articleId: string }
-// Called when user clicks "Select for Script" on the frontend.
-// Scrapes the article, generates a 500-600 word Hindi news script,
-// saves it back to the DB row, and returns it.
-// ────────────────────────────────────────────────────────────────
+// ── generateArticleSummary controller ───────────────────────────
 const generateArticleSummary = async (req, res) => {
+  // ... (Keep your exact code for this function, no changes needed here) ...
   try {
     const { articleId } = req.body;
 
@@ -155,7 +274,6 @@ const generateArticleSummary = async (req, res) => {
       return res.status(400).json({ success: false, message: "articleId is required." });
     }
 
-    // ── Fetch the article from DB ──────────────────────────────
     const article = await prisma.morningAiNewsFetch.findUnique({
       where: { id: articleId },
     });
@@ -164,7 +282,6 @@ const generateArticleSummary = async (req, res) => {
       return res.status(404).json({ success: false, message: "Article not found." });
     }
 
-    // ── If script already generated, return it immediately ─────
     if (article.hindiSummary && article.hindiSummary.trim().length > 100) {
       return res.status(200).json({
         success: true,
@@ -178,15 +295,12 @@ const generateArticleSummary = async (req, res) => {
       });
     }
 
-
     const fullText = await scrapeArticle(article.link);
 
     const sourceMaterial = fullText
       ? `Title: ${article.title}\n\nFull Article:\n${fullText}`
       : `Title: ${article.title}\n\nDescription: ${article.description || "No description available."}`;
 
-
-    // ── Generate Hindi news script ─────────────────────────────
     const openRouter = new OpenAI({
       apiKey: process.env.OPENROUTER_API_KEY,
       baseURL: "https://openrouter.ai/api/v1",
@@ -239,9 +353,6 @@ Return raw JSON only: { "hindiSummary": "..." }`,
     const hindiSummary = parsed.hindiSummary || article.description || "";
     const wordCount = hindiSummary.trim().split(/\s+/).length;
 
-
-
-    // ── Persist generated script back to DB ───────────────────
     const updated = await prisma.morningAiNewsFetch.update({
       where: { id: articleId },
       data: { hindiSummary },
@@ -258,10 +369,10 @@ Return raw JSON only: { "hindiSummary": "..." }`,
       },
     });
   } catch (error) {
-
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // ── Dev/test endpoint (unchanged) ────────────────────────────────
 const getMorningNewsTester = async (req, res) => {
@@ -301,7 +412,6 @@ const getMorningNewsTester = async (req, res) => {
       allResults.push(...pageData.results);
       nextPage = pageData.nextPage || null;
       pageCount++;
-
     }
 
     const seen = new Set();
@@ -318,7 +428,6 @@ const getMorningNewsTester = async (req, res) => {
       data: unique,
     });
   } catch (error) {
-
     return res.status(500).json({ status: false, message: error.message });
   }
 };

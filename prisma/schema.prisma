@@ -253,3 +253,12 @@ model SavedScript {
   @@index([createdAt])
   @@map("saved_scripts")
 }
+
+model FetchLock {
+  key       String   @id
+  runId     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("fetch_locks")
+}
