@@ -4,10 +4,9 @@ import OpenAI from "openai";
 import { extract } from '@extractus/article-extractor';
 import prisma from "../DB/prisma.client.js";
 
-// ── OpenRouter client ────────────────────────────────────────────
-const openRouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
+// ── Native OpenAI client ─────────────────────────────────────────
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
   timeout: 120000, // 2 min max
 });
 
@@ -84,12 +83,6 @@ const generateScriptLogic = async ({ newsIds, scriptType }) => {
     .map((n, i) => `News ${i + 1}:\nTitle: ${n.title}\nCore Facts:\n${n.hindiSummary}`)
     .join("\n\n");
 
-  const openRouter = new OpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY,
-    baseURL: "https://openrouter.ai/api/v1",
-    timeout: 120000, // 2 min max
-  });
-
   // ── SHORT ──────────────────────────────────────────────────────
   if (scriptType === "short") {
     const generateShort = async (attempt = 1, previousCount = null) => {
@@ -97,7 +90,7 @@ const generateScriptLogic = async ({ newsIds, scriptType }) => {
         ? `\n\n⚠️ RETRY ATTEMPT ${attempt}: Previous anchor was only ${previousCount} words — BELOW minimum 110. THIS IS A FAILURE. You MUST write at least 110 words. Add more sentences. Do NOT stop until you reach 110 words.`
         : "";
 
-      const completion = await openRouter.chat.completions.create({
+      const completion = await openai.chat.completions.create({
         messages: [
           {
             role: "system",
@@ -120,6 +113,10 @@ ANCHOR RULES:
 RETENTION RULES (VERY IMPORTANT):
 - Every 1-2 sentences MUST create a new hook, twist, or curiosity spike.
 - At least 2 strong pattern interrupts are mandatory.
+Examples:
+"लेकिन असली बात ये नहीं है..."
+"अब ध्यान से सुनिए..."
+"यहीं से मामला बदल जाता है..."
 
 STRICT FLOW:
 1. Shocking opening claim
@@ -145,11 +142,12 @@ Respond with ONLY this JSON (no markdown, no backticks, no extra text):
 { "anchor": "your 110-130 word script here", "voiceOver": "", "thumbnail": "4-7 word Hindi text" }`,
           },
         ],
-        model: "openai/gpt-4o-mini",
+        model: "gpt-4o",
         temperature: 0.25,
         frequency_penalty: 0.8,
         presence_penalty: 0.6,
-        max_completion_tokens: 7000,
+        max_tokens: 7000,
+        response_format: { type: "json_object" },
       });
 
       const raw = completion.choices[0].message.content;
@@ -171,8 +169,7 @@ Respond with ONLY this JSON (no markdown, no backticks, no extra text):
       }
     }
 
-    // ✅ FIX: Force the actual news title into title, heading, and thumbnail.
-    // This stops the frontend from accidentally saving the AI-generated text.
+    // ✅ Return the title so it can be saved in the database
     return {
       title: mainTitle,
       heading: mainTitle,
@@ -184,14 +181,13 @@ Respond with ONLY this JSON (no markdown, no backticks, no extra text):
     };
   }
 
-
   // ── LONG ───────────────────────────────────────────────────────
   const generateAnchor = async (attempt = 1, previousCount = null) => {
     const retryWarning = previousCount
       ? `\n\n⚠️ RETRY ATTEMPT ${attempt}: Previous anchor was ${previousCount} words — BELOW minimum 110. Write MORE. Each sentence must be 15-20 words. Add more sentences until you reach 110 words.`
       : "";
 
-    const completion = await openRouter.chat.completions.create({
+    const completion = await openai.chat.completions.create({
       messages: [
         {
           role: "system",
@@ -212,6 +208,10 @@ RULES:
 RETENTION RULES:
 - At least 3 curiosity spikes must appear.
 - At least 2 pattern interrupts are mandatory.
+Examples:
+"लेकिन असली बात अभी बाकी है..."
+"अब सवाल ये है..."
+"यहीं से कहानी बदलती है..."
 
 STRUCTURE:
 1. Big impact line
@@ -236,11 +236,12 @@ Respond with ONLY this JSON (no markdown, no backticks):
 { "anchor": "your 110-130 word anchor here", "thumbnail": "4-7 word Hindi text" }`,
         },
       ],
-      model: "openai/gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.25,
       frequency_penalty: 0.8,
       presence_penalty: 0.6,
-      max_completion_tokens: 7000,
+      max_tokens: 7000,
+      response_format: { type: "json_object" },
     });
 
     const raw = completion.choices[0].message.content;
@@ -267,7 +268,7 @@ Respond with ONLY this JSON (no markdown, no backticks):
       ? `\n\n⚠️ RETRY ATTEMPT ${attempt}: Previous voice over was only ${previousCount} words — FAR BELOW the 600 minimum. THIS IS A FAILURE. Add more sentences to EVERY step until you reach 600 words.`
       : "";
 
-    const completion = await openRouter.chat.completions.create({
+    const completion = await openai.chat.completions.create({
       messages: [
         {
           role: "system",
@@ -285,7 +286,10 @@ RULES:
 
 RETENTION RULES:
 - Every 3-4 sentences must create a fresh hook, twist, or emotional shift.
-- Use pattern interrupts naturally.
+- Use pattern interrupts naturally:
+"लेकिन असली बात ये नहीं है..."
+"अब ध्यान से समझिए..."
+"यहीं से कहानी बदलती है..."
 
 STRUCTURE (follow all 8 steps, each step minimum 4-5 sentences):
 1. Real-life opening scene
@@ -309,11 +313,12 @@ Respond with ONLY this JSON (no markdown, no backticks):
 { "voiceOver": "your 600-750 word voice over here" }`,
         },
       ],
-      model: "openai/gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.35,
       frequency_penalty: 0.8,
       presence_penalty: 0.6,
-      max_completion_tokens: 7000,
+      max_tokens: 7000,
+      response_format: { type: "json_object" },
     });
 
     const raw = completion.choices[0].message.content;
@@ -335,7 +340,7 @@ Respond with ONLY this JSON (no markdown, no backticks):
     }
   }
 
-  // ✅ FIX: Force the actual news title into title, heading, and thumbnail here too.
+  // ✅ Return the title so it can be saved in the database
   return {
     title: mainTitle,
     heading: mainTitle,
@@ -370,12 +375,6 @@ const refineScriptLogic = async ({ anchor, voiceOver, userMessage, scriptType })
   const sectionLabel = editVoiceOver ? "VOICE OVER" : (isShort ? "SHORT/ANCHOR" : "ANCHOR");
   const sectionWordCount = editVoiceOver ? voiceOverWordCount : anchorWordCount;
   const minWords = editVoiceOver ? 600 : 110;
-
-  const refineOpenRouter = new OpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY,
-    baseURL: "https://openrouter.ai/api/v1",
-    timeout: 90000,
-  });
 
   const callRefine = async (attempt = 1, previousCount = null) => {
     const retryWarning = previousCount
@@ -423,7 +422,7 @@ ${retryWarning}
 Respond with ONLY this JSON (no markdown, no backticks):
 { "text": "complete 110-130 word anchor", "changes": "Hinglish mein kya change kiya" }`;
 
-    return refineOpenRouter.chat.completions.create({
+    return openai.chat.completions.create({
       messages: [
         {
           role: "system",
@@ -440,11 +439,12 @@ ${previousCount ? `5. PREVIOUS WAS ${previousCount} WORDS — TOO SHORT. Must wr
         },
         { role: "user", content: prompt },
       ],
-      model: "openai/gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.35,
       frequency_penalty: 0.8,
       presence_penalty: 0.6,
-      max_completion_tokens: editVoiceOver ? 7000 : 1000,
+      max_tokens: editVoiceOver ? 7000 : 1000,
+      response_format: { type: "json_object" },
     });
   };
 
@@ -572,29 +572,28 @@ export const refineScript = async (req, res) => {
 // ── POST /save ───────────────────────────────────────────────────
 export const saveGeneratedScript = async (req, res) => {
   try {
-    // ✅ Extract title from req.body
-    const { heading, title, anchor, voiceOver, thumbnail, scriptType } = req.body;
+    const { heading, title, anchor, voiceOver, thumbnail, scriptType, newsIds } = req.body;
     const userId = req?.user?.id;
-
-    console.log(heading, title)
 
     if (!userId) {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
-    if (!heading || !anchor) {
-      return res.status(400).json({ success: false, error: "heading and anchor are required" });
+    if (!anchor) {
+      return res.status(400).json({ success: false, error: "anchor is required" });
     }
+
+    const finalTitle = title || heading || thumbnail || "News Script";
 
     const script = await prisma.savedScript.create({
       data: {
         userId,
-        heading,
-        title: title || heading, // ✅ Save title to DB (fallback to heading if undefined)
+        heading: finalTitle,
+        title: finalTitle, 
         anchor,
         voiceOver: scriptType === "short" ? "" : (voiceOver || ""),
-        thumbnail: thumbnail || "",
+        thumbnail: finalTitle,
         scriptType: scriptType || null,
-        newsIds: [],
+        newsIds: Array.isArray(newsIds) ? newsIds : [],
         isVoiceGenerated: false,
       },
     });
@@ -626,7 +625,7 @@ export const getSavedScripts = async (req, res) => {
     const mapped = scripts.map((s) => ({
       id: s.id,
       heading: s.heading,
-      title: s.title || "", // ✅ Map title to response
+      title: s.title || "", 
       anchor: s.anchor || "",
       voiceOver: s.voiceOver || "",
       thumbnail: s.thumbnail || "",
@@ -679,9 +678,6 @@ export const extractNewsFromUrl = async (req, res) => {
 
     const article = await extract(url);
 
-    console.log(article);
-    
-
     if (!article) {
       return res.status(400).json({
         success: false,
@@ -691,8 +687,6 @@ export const extractNewsFromUrl = async (req, res) => {
 
     const fullText = article.content || article.description || "No description provided.";
     const sourceMaterial = `Title: ${article.title || "Custom Extracted Article"}\n\nFull Article:\n${fullText}`;
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
       messages: [
@@ -715,7 +709,7 @@ SCRIPT RULES:
           content: `Write a 500-600 word Hindi TV news anchor script for this article.\n\n${sourceMaterial}\n\nReturn raw JSON only: { "hindiSummary": "..." }`,
         },
       ],
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.3,
       response_format: { type: "json_object" },
     });
