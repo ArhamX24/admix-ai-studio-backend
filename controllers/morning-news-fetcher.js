@@ -278,8 +278,6 @@ const generateArticleSummary = async (req, res) => {
       where: { id: articleId },
     });
 
-    console.log(article);
-
     if (!article) {
       return res.status(404).json({ success: false, message: "Article not found." });
     }
