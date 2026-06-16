@@ -5,7 +5,8 @@ import {
   refineScript,
   saveGeneratedScript,
   getSavedScripts,
-  deleteSavedScript
+  deleteSavedScript,
+  extractNewsFromUrl
 } from '../controllers/script.controllers.js'
 import { authenticateToken } from '../middlewares/auth.middleware.js'
 
@@ -26,5 +27,7 @@ scriptGeneratorRouter.post('/refine', refineScript)
 scriptGeneratorRouter.post('/save', authenticateToken, saveGeneratedScript)   
 scriptGeneratorRouter.get('/saved',authenticateToken, getSavedScripts)           
 scriptGeneratorRouter.delete('/delete/:id', authenticateToken, deleteSavedScript) 
+
+scriptGeneratorRouter.post('/extract-url', extractNewsFromUrl);
 
 export default scriptGeneratorRouter

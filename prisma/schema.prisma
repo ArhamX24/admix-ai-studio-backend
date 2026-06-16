@@ -218,15 +218,15 @@ model SpeechHistory {
 
 model morningAiNewsFetch {
   id String @id @default(uuid())
-  title String
-  hindiSummary String  @db.Text
-  description String   @db.Text
-  link String
-  image_url String
-  source_name String
-  source_url String
-  category String
-  pubDate String
+  title String?
+  hindiSummary String?  @db.Text
+  description String?   @db.Text
+  link String?
+  image_url String?
+  source_name String?
+  source_url String?
+  category String?
+  pubDate String?
   keywords String[]
   
   createdAt DateTime @default(now())
@@ -236,7 +236,7 @@ model SavedScript {
   id          String   @id @default(uuid())
   userId      String
   heading     String
-  description String?  @db.Text
+  title       String  @db.Text
   anchor      String   @db.Text
   voiceOver   String   @db.Text
   thumbnail   String?
